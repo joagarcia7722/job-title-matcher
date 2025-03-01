@@ -5,3 +5,4 @@ rapidfuzz
 openpyxl
 torch==2.2.0
 torchvision
+numpy
