@@ -89,21 +89,21 @@ if st.session_state.standard_titles is not None and st.session_state.unclean_df 
         progress_bar.empty()
         st.session_state.unclean_df["Matched Job Title"] = matched_titles
         st.session_state.unclean_df["Match Score"] = match_scores
-        st.success("✅ Job titles updated successfully!")
+        st.session_state.mapping_df = st.session_state.unclean_df.copy()
+        st.success("✅ Job titles updated successfully! Please review before exporting.")
 
 if not st.session_state.mapping_df.empty:
-    st.subheader("⚠️ Unmatched Job Titles - Manual Standardization Required")
+    st.subheader("🛠 Review & Edit Mapped Job Titles")
     for index, row in st.session_state.mapping_df.iterrows():
         col1, col2 = st.columns([2, 3])
         with col1:
-            st.write(f"❌ **{row['Job Title']}**")
+            st.write(f"📝 **{row['Job Title']}**")
         with col2:
-            new_match = st.text_input(f"Enter Standardized Title for: {row['Job Title']}", key=index)
-            st.session_state.mapping_df.loc[index, "Matched Job Title"] = new_match if new_match else None
-    if st.button("✅ Save Manual Mappings"):
-        st.session_state.mapping_df["Match Score"] = 100
+            new_match = st.text_input(f"Edit Matched Title for: {row['Job Title']}", value=row['Matched Job Title'], key=index)
+            st.session_state.mapping_df.at[index, "Matched Job Title"] = new_match
+    if st.button("✅ Save Changes"):
         st.session_state.unclean_df.update(st.session_state.mapping_df)
-        st.success("✔ Manual mappings saved successfully!")
+        st.success("✔ Changes saved successfully!")
 
 st.subheader("📥 Finalize Mapping & Export")
 if st.button("📥 Export Updated File"):
