@@ -3,6 +3,13 @@ import pandas as pd
 import time
 from sentence_transformers import SentenceTransformer, util
 from rapidfuzz import process, fuzz
+import asyncio
+import torch
+
+try:
+    asyncio.get_running_loop()
+except RuntimeError:
+    asyncio.set_event_loop(asyncio.new_event_loop())
 
 # Set Streamlit theme for a modern high-tech look
 st.set_page_config(page_title="Job Title Matcher", layout="wide")
