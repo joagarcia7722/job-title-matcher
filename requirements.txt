@@ -5,3 +5,5 @@ rapidfuzz
 sentence-transformers
 openpyxl
 torch
+torch==2.0.1
+torchvision
