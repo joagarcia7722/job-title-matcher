@@ -2,7 +2,6 @@ streamlit
 pandas
 sentence-transformers
 rapidfuzz
-sentence-transformers
 openpyxl
 torch==2.1.0
 torchvision
