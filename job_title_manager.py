@@ -1,15 +1,9 @@
 import streamlit as st
 import pandas as pd
 import time
+import numpy as np
 from sentence_transformers import SentenceTransformer, util
 from rapidfuzz import process, fuzz
-import asyncio
-import torch
-
-try:
-    asyncio.get_running_loop()
-except RuntimeError:
-    asyncio.set_event_loop(asyncio.new_event_loop())
 
 # Set Streamlit theme for a modern high-tech look
 st.set_page_config(page_title="Job Title Matcher", layout="wide")
@@ -43,13 +37,15 @@ if "mapping_df" not in st.session_state:
 # Load AI model
 model = SentenceTransformer('all-MiniLM-L6-v2')
 
-def ai_match_title(raw_title, standard_titles, threshold=0.8):
-    query_embedding = model.encode(raw_title, convert_to_tensor=True)
+def match_job_titles_fast(unclean_titles, standard_titles):
+    unclean_embeddings = model.encode(unclean_titles, convert_to_tensor=True)
     standard_embeddings = model.encode(standard_titles, convert_to_tensor=True)
-    similarities = util.pytorch_cos_sim(query_embedding, standard_embeddings)[0]
-    best_match_index = similarities.argmax().item()
-    best_score = similarities[best_match_index].item()
-    return (standard_titles[best_match_index], best_score) if best_score >= threshold else (None, best_score)
+    similarities = util.pytorch_cos_sim(unclean_embeddings, standard_embeddings)
+    best_match_indices = similarities.argmax(dim=1)
+    best_scores = similarities.max(dim=1).values.cpu().numpy()
+    standard_title_lookup = {i: standard_titles[i] for i in range(len(standard_titles))}
+    matched_titles = [standard_title_lookup[idx] if score >= 0.8 else None for idx, score in zip(best_match_indices, best_scores)]
+    return matched_titles, best_scores * 100
 
 def fuzzy_match_title(raw_title, standard_titles, threshold=80):
     best_match, score, _ = process.extractOne(raw_title, standard_titles, scorer=fuzz.token_sort_ratio)
@@ -79,26 +75,15 @@ if st.session_state.standard_titles is not None and st.session_state.unclean_df 
     if st.button("🚀 Run Matching"):
         unclean_titles = st.session_state.unclean_df.iloc[:, 0].astype(str).tolist()
         standard_titles = st.session_state.standard_titles["Standardized Job Title"].astype(str).tolist()
-
-        matched_titles, match_scores = [], []
-        progress_bar = st.progress(0)
-
-        for i, title in enumerate(unclean_titles):
-            ai_match, ai_score = ai_match_title(title, standard_titles, threshold=0.8)
-            if ai_match:
-                matched_titles.append(ai_match)
-                match_scores.append(ai_score * 100)
-            else:
-                fuzzy_match, fuzzy_score = fuzzy_match_title(title, standard_titles, threshold=80)
-                matched_titles.append(fuzzy_match if fuzzy_match else None)
-                match_scores.append(fuzzy_score if fuzzy_match else 0)
-            
-            progress_bar.progress((i + 1) / len(unclean_titles))
-            time.sleep(0.05)  # Simulating progress update
-        
+        matched_titles, match_scores = match_job_titles_fast(unclean_titles, standard_titles)
+        for i in range(len(matched_titles)):
+            if matched_titles[i] is None:
+                fuzzy_match, fuzzy_score = fuzzy_match_title(unclean_titles[i], standard_titles, threshold=80)
+                if fuzzy_match:
+                    matched_titles[i] = fuzzy_match
+                    match_scores[i] = fuzzy_score
         st.session_state.unclean_df["Matched Job Title"] = matched_titles
         st.session_state.unclean_df["Match Score"] = match_scores
-        progress_bar.empty()
         st.success("✅ Job titles updated successfully!")
 
 if not st.session_state.mapping_df.empty:
@@ -110,7 +95,6 @@ if not st.session_state.mapping_df.empty:
         with col2:
             new_match = st.text_input(f"Enter Standardized Title for: {row['Job Title']}", key=index)
             st.session_state.mapping_df.loc[index, "Matched Job Title"] = new_match if new_match else None
-
     if st.button("✅ Save Manual Mappings"):
         st.session_state.mapping_df["Match Score"] = 100
         st.session_state.unclean_df.update(st.session_state.mapping_df)
