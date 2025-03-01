@@ -37,7 +37,7 @@ if "mapping_df" not in st.session_state:
 # Load AI model
 model = SentenceTransformer('all-MiniLM-L6-v2')
 
-def match_job_titles_fast(unclean_titles, standard_titles):
+def match_job_titles_fast(unclean_titles, standard_titles, progress_bar):
     unclean_embeddings = model.encode(unclean_titles, convert_to_tensor=True)
     standard_embeddings = model.encode(standard_titles, convert_to_tensor=True)
     similarities = util.pytorch_cos_sim(unclean_embeddings, standard_embeddings)
@@ -45,6 +45,7 @@ def match_job_titles_fast(unclean_titles, standard_titles):
     best_scores = similarities.max(dim=1).values.cpu().numpy()
     standard_title_lookup = {i: standard_titles[i] for i in range(len(standard_titles))}
     matched_titles = [standard_title_lookup[idx] if score >= 0.8 else None for idx, score in zip(best_match_indices, best_scores)]
+    progress_bar.progress(50)
     return matched_titles, best_scores * 100
 
 def fuzzy_match_title(raw_title, standard_titles, threshold=80):
@@ -73,15 +74,19 @@ if uploaded_unclean:
 
 if st.session_state.standard_titles is not None and st.session_state.unclean_df is not None:
     if st.button("🚀 Run Matching"):
+        progress_bar = st.progress(0)
         unclean_titles = st.session_state.unclean_df.iloc[:, 0].astype(str).tolist()
         standard_titles = st.session_state.standard_titles["Standardized Job Title"].astype(str).tolist()
-        matched_titles, match_scores = match_job_titles_fast(unclean_titles, standard_titles)
+        matched_titles, match_scores = match_job_titles_fast(unclean_titles, standard_titles, progress_bar)
         for i in range(len(matched_titles)):
             if matched_titles[i] is None:
                 fuzzy_match, fuzzy_score = fuzzy_match_title(unclean_titles[i], standard_titles, threshold=80)
                 if fuzzy_match:
                     matched_titles[i] = fuzzy_match
                     match_scores[i] = fuzzy_score
+            progress_bar.progress(int(((i + 1) / len(matched_titles)) * 100))
+            time.sleep(0.02)
+        progress_bar.empty()
         st.session_state.unclean_df["Matched Job Title"] = matched_titles
         st.session_state.unclean_df["Match Score"] = match_scores
         st.success("✅ Job titles updated successfully!")
