@@ -50,10 +50,12 @@ def match_job_titles(unclean_titles, standard_titles, progress_bar):
     
     for i in range(len(matched_titles)):
         if matched_titles[i] is None:
-            fuzzy_match, fuzzy_score = process.extractOne(unclean_titles[i], standard_titles, scorer=fuzz.WRatio)
-            if fuzzy_match and fuzzy_score >= 80:
-                matched_titles[i] = fuzzy_match
-                best_scores[i] = fuzzy_score / 100
+            fuzzy_result = process.extractOne(unclean_titles[i], standard_titles, scorer=fuzz.WRatio)
+            if fuzzy_result:
+                fuzzy_match, fuzzy_score, _ = fuzzy_result  # Correct unpacking
+                if fuzzy_score >= 80:
+                    matched_titles[i] = fuzzy_match
+                    best_scores[i] = fuzzy_score / 100
     
     progress_bar.progress(100)
     return matched_titles, best_scores * 100
