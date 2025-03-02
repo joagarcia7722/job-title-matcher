@@ -37,20 +37,26 @@ if "mapping_df" not in st.session_state:
 # Load AI model
 model = SentenceTransformer('all-MiniLM-L6-v2')
 
-def match_job_titles_fast(unclean_titles, standard_titles, progress_bar):
+def match_job_titles(unclean_titles, standard_titles, progress_bar):
+    """Matches job titles using AI embedding and fuzzy matching."""
     unclean_embeddings = model.encode(unclean_titles, convert_to_tensor=True)
     standard_embeddings = model.encode(standard_titles, convert_to_tensor=True)
     similarities = util.pytorch_cos_sim(unclean_embeddings, standard_embeddings)
     best_match_indices = similarities.argmax(dim=1)
     best_scores = similarities.max(dim=1).values.cpu().numpy()
+    
     standard_title_lookup = {i: standard_titles[i] for i in range(len(standard_titles))}
-    matched_titles = [standard_title_lookup[idx] if score >= 0.8 else None for idx, score in zip(best_match_indices, best_scores)]
-    progress_bar.progress(50)
+    matched_titles = [standard_title_lookup[idx] if score >= 0.75 else None for idx, score in zip(best_match_indices, best_scores)]
+    
+    for i in range(len(matched_titles)):
+        if matched_titles[i] is None:
+            fuzzy_match, fuzzy_score = process.extractOne(unclean_titles[i], standard_titles, scorer=fuzz.WRatio)
+            if fuzzy_match and fuzzy_score >= 80:
+                matched_titles[i] = fuzzy_match
+                best_scores[i] = fuzzy_score / 100
+    
+    progress_bar.progress(100)
     return matched_titles, best_scores * 100
-
-def fuzzy_match_title(raw_title, standard_titles, threshold=80):
-    best_match, score, _ = process.extractOne(raw_title, standard_titles, scorer=fuzz.token_sort_ratio)
-    return (best_match, score) if best_match else (None, score)
 
 st.title("🔍 Job Title Matcher")
 st.subheader("📤 Upload Standardized Job Titles")
@@ -60,9 +66,6 @@ if uploaded_standard:
     standard_df = pd.read_csv(uploaded_standard) if uploaded_standard.name.endswith(".csv") else pd.read_excel(uploaded_standard)
     st.session_state.standard_titles = standard_df
     st.success("✅ Standardized job titles uploaded successfully!")
-
-st.subheader("📌 Stored Standardized Job Titles")
-st.dataframe(st.session_state.standard_titles, use_container_width=True)
 
 st.subheader("📥 Upload Unclean Job Titles")
 uploaded_unclean = st.file_uploader("Upload a CSV or Excel file with unclean job titles.", type=["csv", "xlsx"])
@@ -77,16 +80,8 @@ if st.session_state.standard_titles is not None and st.session_state.unclean_df 
         progress_bar = st.progress(0)
         unclean_titles = st.session_state.unclean_df.iloc[:, 0].astype(str).tolist()
         standard_titles = st.session_state.standard_titles["Standardized Job Title"].astype(str).tolist()
-        matched_titles, match_scores = match_job_titles_fast(unclean_titles, standard_titles, progress_bar)
-        for i in range(len(matched_titles)):
-            if matched_titles[i] is None:
-                fuzzy_match, fuzzy_score = fuzzy_match_title(unclean_titles[i], standard_titles, threshold=80)
-                if fuzzy_match:
-                    matched_titles[i] = fuzzy_match
-                    match_scores[i] = fuzzy_score
-            progress_bar.progress(int(((i + 1) / len(matched_titles)) * 100))
-            time.sleep(0.02)
-        progress_bar.empty()
+        
+        matched_titles, match_scores = match_job_titles(unclean_titles, standard_titles, progress_bar)
         st.session_state.unclean_df["Matched Job Title"] = matched_titles
         st.session_state.unclean_df["Match Score"] = match_scores
         st.session_state.mapping_df = st.session_state.unclean_df.copy()
